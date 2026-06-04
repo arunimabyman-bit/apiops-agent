@@ -13,7 +13,7 @@ file:
 
 milvus:
   host: localhost
-  port: 19530
+  port: 39530    # 从 19530 改为 39530，与 docker-compose 对应
   username: ""
   password: ""
   database: default
@@ -21,6 +21,16 @@ milvus:
 
 # Spring AI Alibaba DashScope 配置
 spring:
+  data:
+    redis:
+      host: localhost
+      port: 46379
+      timeout: 5000ms
+      jedis:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
   ai:
     dashscope:
       api-key: ${DASHSCOPE_API_KEY:your-api-key-here}  # 从环境变量读取或使用默认值

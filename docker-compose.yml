@@ -1,0 +1,120 @@
+version: '3.8'
+
+services:
+  # ==================== Redis 缓存服务 ====================
+  redis:
+    container_name: aiops-redis
+    image: redis:7-alpine
+    ports:
+      - "46379:6379" # 非标准端口，避免冲突
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/redis:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - aiops
+
+  # ==================== Milvus 元数据存储 (etcd) ====================
+  etcd:
+    container_name: aiops-etcd
+    image: quay.io/coreos/etcd:v3.5.18
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/etcd:/etcd
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - aiops
+
+  # ==================== Milvus 对象存储 (MinIO) ====================
+  minio:
+    container_name: aiops-minio
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    ports:
+      - "39000:9000" # MinIO API (非标准端口)
+      - "39001:9001" # MinIO Console (非标准端口)
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/minio:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - aiops
+
+  # ==================== Milvus 向量数据库 ====================
+  standalone:
+    container_name: aiops-milvus
+    image: milvusdb/milvus:v2.5.10
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/milvus:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      start_period: 90s
+      timeout: 20s
+      retries: 3
+    ports:
+      - "39530:19530" # Milvus gRPC (非标准端口)
+      - "39091:9091"  # Milvus Health (非标准端口)
+    depends_on:
+      - etcd
+      - minio
+    networks:
+      - aiops
+
+  # ==================== Milvus 可视化界面 (Attu) ====================
+  attu:
+    container_name: aiops-attu
+    image: zilliz/attu:v2.5
+    ports:
+      - "48000:3000" # Attu Web UI (非标准端口)
+    environment:
+      MILVUS_URL: standalone:19530
+    depends_on:
+      - standalone
+    networks:
+      - aiops
+
+  # ==================== Redis 可视化管理界面 (RedisInsight) ====================
+  redisinsight:
+    container_name: aiops-redisinsight
+    image: redis/redisinsight:latest
+    ports:
+      - "45540:5540" # RedisInsight Web UI (非标准端口)
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/redisinsight:/data
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - aiops
+
+networks:
+  aiops:
+    name: aiops
+    driver: bridge

@@ -32,6 +32,9 @@ public class VectorSearchService {
     @Autowired
     private VectorEmbeddingService embeddingService;
 
+    @Autowired(required = false)
+    private RecallCacheService recallCacheService;
+
     /**
      * 搜索相似文档
      * 
@@ -42,6 +45,14 @@ public class VectorSearchService {
     public List<SearchResult> searchSimilarDocuments(String query, int topK) {
         try {
             logger.info("开始搜索相似文档, 查询: {}, topK: {}", query, topK);
+
+            // 0. 尝试从 Redis 缓存获取召回结果
+            if (recallCacheService != null) {
+                List<SearchResult> cached = recallCacheService.tryGet(query, topK);
+                if (cached != null) {
+                    return cached;
+                }
+            }
 
             // 1. 将查询文本向量化
             List<Float> queryVector = embeddingService.generateQueryVector(query);
@@ -85,6 +96,12 @@ public class VectorSearchService {
             }
 
             logger.info("搜索完成, 找到 {} 个相似文档", results.size());
+
+            // 将召回结果写入 Redis 缓存
+            if (recallCacheService != null && !results.isEmpty()) {
+                recallCacheService.cachePut(query, topK, results);
+            }
+
             return results;
 
         } catch (Exception e) {
