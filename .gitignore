@@ -1,0 +1,35 @@
+# Maven
+target/
+*.class
+*.jar
+*.war
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Upload files
+uploads/
+
+# Docker volumes
+volumes/
+
+# Application
+*.pid
+*.seed
+*.tmp
+
+# Environment
+.env
